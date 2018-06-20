@@ -11,17 +11,17 @@ public class LoggerImpl implements Logger {
 
     @Override
     public void info(String s) {
-        System.out.println("[INFO] " + s);
+        System.out.println("[INFO ] " + s);
     }
 
     @Override
     public void warning(String s) {
-        System.out.println("[WARN] " + s);
+        System.out.println("[WARN ] " + s);
     }
 
     @Override
     public void error(String s) {
-        System.err.println("[ERRO] " + s);
+        System.err.println("[ERROR] " + s);
     }
 
     @Override

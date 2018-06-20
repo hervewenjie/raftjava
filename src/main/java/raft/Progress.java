@@ -96,13 +96,13 @@ public class Progress {
     // Otherwise it updates the progress and returns true.
     public boolean maybeUpdate(long n) {
         boolean updated = false;
-        if (this.Match < n) {
-            this.Match = n;
+        if (Match < n) {
+            Match = n;
             updated = true;
             this.resume();
         }
-        if (this.Next < n + 1) {
-            this.Next = n + 1;
+        if (Next < n + 1) {
+            Next = n + 1;
         }
         return updated;
     }

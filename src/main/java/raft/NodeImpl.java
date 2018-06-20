@@ -1,5 +1,6 @@
 package raft;
 
+import com.alibaba.fastjson.JSON;
 import context.Context;
 import javafx.scene.paint.Stop;
 import lombok.Builder;
@@ -20,16 +21,16 @@ import java.util.concurrent.ArrayBlockingQueue;
 @Builder
 public class NodeImpl implements Node {
 
-    Queue<MessageWithResult> propc;         //  chan msgWithResult
-    Queue<pb.Message>        recvc;         //  chan pb.Message
-    Queue<pb.ConfChange>     confc;         //  chan pb.ConfChange
-    Queue<pb.ConfState>      confstatec;    //  chan pb.ConfState
-    Queue<Ready> readyc;                    //  chan Ready
-    Queue advancec;   // chan struct{}
-    Queue tickc;      // chan struct{}
-    Queue done;       // chan struct{}
-    Queue stop;       // chan struct{}
-    Queue<Queue> status;     // chan chan Status
+    public Queue<MessageWithResult> propc;         //  chan msgWithResult
+    public Queue<pb.Message>        recvc;         //  chan pb.Message
+    public Queue<pb.ConfChange>     confc;         //  chan pb.ConfChange
+    public Queue<pb.ConfState>      confstatec;    //  chan pb.ConfState
+    public Queue<Ready> readyc;                    //  chan Ready
+    public Queue advancec;                         //  chan struct{}
+    public Queue tickc;                            //  chan struct{}
+    public Queue done;                             //  chan struct{}
+    public Queue stop;                             //  chan struct{}
+    public Queue<Queue> status;                    //  chan chan Status
 
     Logger logger;
 
@@ -200,7 +201,8 @@ public class NodeImpl implements Node {
                     prevSnapi = rd.Snapshot.Metadata.Index;
                 }
 
-                r.msgs = null;
+                // empty message
+                r.msgs.clear();
                 r.readStates = null;
                 advancec = this.advancec;
             }

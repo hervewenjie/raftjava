@@ -1,6 +1,5 @@
 package raft;
 
-import com.sun.tools.javac.util.ArrayUtils;
 import javafx.util.Pair;
 import pb.ConfState;
 import pb.Entry;
@@ -26,7 +25,7 @@ public class MemoryStorage implements Storage {
     Lock lock = new ReentrantLock();
 
     @Override
-    public long term(Long i) {
+    public long term(long i) {
         return 0L;
     }
 
@@ -97,10 +96,10 @@ public class MemoryStorage implements Storage {
 
         long offset = entries[0].Index - ents[0].Index;
         if (ents.length > offset) {
-            ents = ArrayUtil.merge(new Entry[0], entries);
-            ents = ArrayUtil.merge(ents, entries);
+            ents = ArrayUtil.append(new Entry[0], entries);
+            ents = ArrayUtil.append(ents, entries);
         } else if (ents.length == offset) {
-            ents = ArrayUtil.merge(ents, entries);
+            ents = ArrayUtil.append(ents, entries);
         } else {
             LOG.error(String.format("missing log entry [last: %d, append at: %d]",
                     lastIndex(), entries[0].Index));

@@ -34,4 +34,13 @@ public class ReadOnly {
     public ReadIndexStatus[] advance() {
         return null;
     }
+
+    // lastPendingRequestCtx returns the context of the last pending read only
+    // request in readonly struct.
+    public String lastPendingRequestCtx() {
+        if (readIndexQueue == null || readIndexQueue.length == 0) {
+            return "";
+        }
+        return readIndexQueue[readIndexQueue.length - 1];
+    }
 }

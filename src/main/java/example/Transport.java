@@ -40,9 +40,9 @@ public class Transport {
 
     TLSInfo tLSInfo; // TLS information used when creating connection
 
-    long ID;          // local member ID
-    String[] URLs;    // local peer URLs
-    long  ClusterID;  // raft cluster ID for request validation
+    long ID;              // local member ID
+    String[] URLs;        // local peer URLs
+    long  ClusterID;      // raft cluster ID for request validation
     RaftNode     raft;    // raft state machine, to which the Transport forwards received messages and reports status
     SnapShotter snapshotter;
 //    ServerStats *stats.ServerStats // used to record general transportation statistics
@@ -76,6 +76,7 @@ public class Transport {
                     Object obj = is.readObject();
                     Message m = (Message)obj;
                     LOG.info("server " + id + " received " + JSON.toJSONString(m));
+                    raft.nodeImpl.recvc.add(m);
                 }
             } catch (IOException | ClassNotFoundException e) {
                 LOG.error("transport start failed...");

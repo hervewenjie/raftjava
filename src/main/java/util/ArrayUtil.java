@@ -10,7 +10,7 @@ import java.util.List;
  */
 public class ArrayUtil {
 
-    public static Entry[] merge(Entry[] a, Entry[] b) {
+    public static Entry[] append(Entry[] a, Entry[] b) {
         if (a == null || a.length == 0) return b;
         if (b == null || b.length == 0) return a;
         Entry[] c = new Entry[a.length + b.length];
@@ -20,6 +20,12 @@ public class ArrayUtil {
             c[i++] = b[j];
         }
         return c;
+    }
+
+    public static Entry[] asArray(Entry a) {
+        Entry[] b = new Entry[1];
+        b[0] = a;
+        return b;
     }
 
     public static Message[] toArray(List<Message> l) {

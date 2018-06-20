@@ -3,13 +3,13 @@ package raft;
 import javafx.util.Pair;
 import lombok.Builder;
 import pb.*;
+import util.ArrayUtil;
 import util.LOG;
 import util.Panic;
 
 import java.util.*;
 
-import static pb.MessageType.MsgAppResp;
-import static pb.MessageType.MsgTimeoutNow;
+import static pb.MessageType.*;
 import static raft.ProgressStateType.ProgressStateReplicate;
 import static raft.ReadOnlyOption.ReadOnlySafe;
 
@@ -43,7 +43,7 @@ public class Raft {
     Map<Long, Boolean> votes;
 
     @Builder.Default
-    List<Message> msgs = new ArrayList<>();
+    final List<Message> msgs = new ArrayList<>();
 
     // the leader id
     long lead;
@@ -169,9 +169,8 @@ public class Raft {
         }
     }
 
-    void resetRandomizedElectionTimeout() {
+    private void resetRandomizedElectionTimeout() {
         Random random = new Random();
-
         randomizedElectionTimeout = electionTimeout + random.nextInt(electionTimeout);
         // hack! make sure 1 always time out
         randomizedElectionTimeout = (int) (randomizedElectionTimeout * id * id);
@@ -193,17 +192,17 @@ public class Raft {
         long mlastIndex = raftLog.maybeAppend(m.Index, m.LogTerm, m.Commit, m.Entries);
         if (mlastIndex != 0L) {
             // append succeeds, send response
-            this.send(pb.Message.builder().To(m.From).Type(MsgAppResp).Index(raftLog.committed).build());
+            send(pb.Message.builder().To(m.From).Type(MsgAppResp).Index(raftLog.committed).build());
         } else {
             logger.debug(String.format("%x [logterm: %d, index: %d] rejected msgApp [logterm: %d, index: %d] from %x",
                     id, raftLog.zeroTermOnErrCompacted(raftLog.term(m.Index)), m.Index, m.LogTerm, m.Index, m.From));
-            this.send(pb.Message.builder().To(m.From).Type(MsgAppResp).Index(m.Index).Reject(true).RejectHint(raftLog.lastIndex()).build());
+            send(pb.Message.builder().To(m.From).Type(MsgAppResp).Index(m.Index).Reject(true).RejectHint(raftLog.lastIndex()).build());
         }
     }
 
     public void handleHeartbeat(pb.Message m) {
-        this.raftLog.commitTo(m.Commit);
-        this.send(pb.Message.builder().To(m.From).Type(MessageType.MsgHeartbeatResp).Context(m.Context).build());
+        raftLog.commitTo(m.Commit);
+        send(pb.Message.builder().To(m.From).Type(MessageType.MsgHeartbeatResp).Context(m.Context).build());
     }
 
     public void handleSnapshot(pb.Message m) {
@@ -213,15 +212,15 @@ public class Raft {
     // --------
 
     public boolean hasLeader() {
-        return this.lead != 0L;
+        return lead != 0L;
     }
 
     public SoftState softState() {
-        return SoftState.builder().Lead(this.lead).RaftState(this.state).build();
+        return SoftState.builder().Lead(lead).RaftState(state).build();
     }
 
     public int quorum() {
-        return this.prs.size() / 2 + 1;
+        return prs.size() / 2 + 1;
     }
 
     public long[] nodes() {
@@ -235,7 +234,7 @@ public class Raft {
 
     public Long[] learnerNodes() {
         List<Long> nodes = new ArrayList<>();
-        this.learnerPrs.keySet().stream().forEach(i -> nodes.add(i));
+        learnerPrs.keySet().stream().forEach(i -> nodes.add(i));
         Collections.sort(nodes);
         return (Long[]) nodes.toArray();
     }
@@ -272,25 +271,25 @@ public class Raft {
             }
         }
         // append to array, if no space, new array is allocated
-        this.msgs.add(m);
+        msgs.add(m);
     }
 
-    public Progress getProgress(Long id) {
+    public Progress getProgress(long id) {
         Progress p;
         if ((p = prs.get(id)) != null) return p;
         return learnerPrs.get(id);
     }
 
     // sendAppend sends RPC, with entries to the given peer.
-    public void sendAppend(Long to) {
-        Progress pr = this.getProgress(id);
+    public void sendAppend(long to) {
+        Progress pr = getProgress(id);
         if (pr.IsPaused()) return;
 
         Message m = pb.Message.builder().build();
         m.To = to;
 
-        Long term = this.raftLog.term(pr.Next - 1);
-        pb.Entry[] ents = this.raftLog.entries(pr.Next, this.maxMsgSize);
+        Long term = raftLog.term(pr.Next - 1);
+        pb.Entry[] ents = raftLog.entries(pr.Next, maxMsgSize);
 
         if (term == null || ents == null) {
             // send snapshot if we failed to get term or entries
@@ -301,7 +300,7 @@ public class Raft {
             m.Index = pr.Next - 1;
             m.LogTerm = term;
             m.Entries = ents;
-            m.Commit  = this.raftLog.committed;
+            m.Commit  = raftLog.committed;
             int n = m.Entries.length;
             if (n != 0) {
                 switch (pr.State) {
@@ -312,23 +311,23 @@ public class Raft {
                     case ProgressStateProbe:
                         pr.pause();
                     default:
-                        this.logger.panic(String.format("%x is sending append in unhandled state %s", this.id, pr.State));
+                        logger.panic(String.format("%x is sending append in unhandled state %s", id, pr.State));
                 }
             }
         }
 
-        this.send(m);
+        send(m);
     }
 
     // sendHeartbeat sends an empty MsgApp
-    public void sendHeartbeat(Long to, byte[] ctx) {
+    private void sendHeartbeat(Long to, byte[] ctx) {
         // Attach the commit as min(to.matched, r.committed).
         // When the leader sends out heartbeat message,
         // the receiver(follower) might not be matched with the leader
         // or it might not have all the committed entries.
         // The leader MUST NOT forward the follower's commit to
         // an unmatched index.
-        long commit = Math.min(this.getProgress(to).Match, this.raftLog.committed);
+        long commit = Math.min(getProgress(to).Match, raftLog.committed);
         Message m = pb.Message.builder()
                 .To(to)
                 .Type(MessageType.MsgHeartbeat)
@@ -348,25 +347,40 @@ public class Raft {
     public void bcastAppend() {
         this.forEachProgress((id, m) -> {
             // skip itself
-            if (id.equals(this.id)) return;
-            this.sendAppend(id);
+            if (id.equals(id)) return;
+            sendAppend(id);
         });
     }
 
     // bcastHeartbeat sends RPC, without entries to all the peers.
     public void bcastHeartbeat() {
-
+        String lastCtx = readOnly.lastPendingRequestCtx();
+        if (lastCtx == null || lastCtx.length() == 0) {
+            bcastHeartbeatWithCtx(null);
+        } else {
+            bcastHeartbeatWithCtx(lastCtx.getBytes());
+        }
     }
 
     public void bcastHeartbeatWithCtx(byte[] ctx) {
-
+        forEachProgress((id, m) -> {
+            if (id == this.id) return;
+            sendHeartbeat(id, ctx);
+        });
     }
 
     // maybeCommit attempts to advance the commit index. Returns true if
     // the commit index changed (in which case the caller should call
     // r.bcastAppend).
     public boolean maybeCommit() {
-        return false;
+        long[] mis = new long[prs.size()];
+        int i = 0;
+        for (Long l : prs.keySet()) {
+            mis[i] = prs.get(l).Match;
+            i++;
+        }
+        long mci = mis[quorum() - 1];
+        return raftLog.maybeCommit(mci, Term);
     }
 
     private void reset(long term) {
@@ -398,38 +412,21 @@ public class Raft {
         readOnly = ReadOnly.newReadOnly(readOnly.option);
     }
 
+    // leader proposal append entry
     public void appendEntry(pb.Entry... es) {
-
-    }
-
-    public void tickElection() {
-        this.electionElapsed++;
-    }
-
-    // tickHeartbeat is run by leaders to send a MsgBeat after r.heartbeatTimeout.
-    public void tickHeartbeat() {
-        this.heartbeatElapsed++;
-        this.electionElapsed++;
-
-        if (this.electionElapsed >=  this.electionTimeout) {
-            this.electionElapsed = 0;
-            if (this.checkQuorum) {
-                this.Step(pb.Message.builder().From(this.id).Type(MessageType.MsgCheckQuorum).build());
-            }
-            // If current leader cannot transfer leadership in electionTimeout, it becomes leader again.
-            if (this.state == StateType.StateLeader && this.leadTransferee != 0L) {
-                this.abortLeaderTransfer();
-            }
+        long li = raftLog.lastIndex();
+        // calculate entry term and index
+        for (int i = 0; i < es.length; i++) {
+            es[i].Term  = Term;       // current term
+            es[i].Index = li + 1 + i; // index increment
         }
-
-        if (this.state != StateType.StateLeader) {
-            return;
-        }
-
-        if (this.heartbeatElapsed >= this.heartbeatTimeout) {
-            this.heartbeatElapsed = 0;
-            this.Step(pb.Message.builder().From(this.id).Type(MessageType.MsgBeat).build());
-        }
+        // use latest "last" index after truncate/append
+        // actually put entries in unstable
+        li = raftLog.append(es);
+        // update progress
+        getProgress(id).maybeUpdate(li);
+        // Regardless of maybeCommit's return, our caller will call bcastAppend.
+        maybeCommit();
     }
 
     public void becomeFollower(long term, long lead) {
@@ -438,7 +435,7 @@ public class Raft {
         this.tick = new tickElection();
         this.lead = lead;
         this.state = StateType.StateFollower;
-        this.logger.info(String.format("%x became follower at term %d", this.id, this.Term));
+        this.logger.info(String.format("%x became follower at term %d", id, Term));
     }
 
     public void becomeCandidate() {
@@ -452,7 +449,7 @@ public class Raft {
         tick = new tickElection();
         Vote = id;
         state = StateType.StateCandidate;
-        logger.info(String.format("%x became candidate at term %d", this.id, this.Term));
+        logger.info(String.format("%x became candidate at term %d", id, Term));
     }
 
     public void becomePreCandidate() {
@@ -460,8 +457,26 @@ public class Raft {
     }
 
     public void becomeLeader() {
+        if (this.state == StateType.StateFollower) {
+            Panic.panic("invalid transition [follower -> leader]");
+        }
+        this.step = new stepLeader();
+        this.reset(this.Term);
+        this.tick = new tickHeartbeat();
+        this.lead = this.id;
+        this.state = StateType.StateLeader;
+        Entry[] ents = this.raftLog.entries(raftLog.committed + 1, Long.MAX_VALUE);
 
-        this.logger.info(String.format("%x became leader at term %d", this.id, this.Term));
+        // Conservatively set the pendingConfIndex to the last index in the
+        // log. There may or may not be a pending config change, but it's
+        // safe to delay any future proposals until we commit all our
+        // pending log entries, and scanning the entire tail of the log
+        // could be expensive.
+        if (ents != null && ents.length > 0) {
+            this.pendingConfIndex = ents[ents.length - 1].Index;
+        }
+        this.appendEntry(Entry.builder().Data(null).build());
+        logger.info(String.format("%x became leader at term %d", id, Term));
     }
 
     public void campaign(CampaignType t) {
@@ -496,7 +511,7 @@ public class Raft {
             // skip itself
             if (id == this.id) continue;
             logger.info(String.format("%x [logterm: %d, index: %d] sent %s request to %x at term %d",
-                    this.id, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, id, this.Term));
+                    this.id, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, id, Term));
 
             byte[] ctx = null;
             if (t == CampaignType.campaignTransfer) {
@@ -511,9 +526,9 @@ public class Raft {
 
     public int poll(long id, pb.MessageType t, boolean v) {
         if (v) {
-            this.logger.info(String.format("%x received %s from %x at term %d", this.id, t, id, this.Term));
+            logger.info(String.format("%x received %s from %x at term %d", this.id, t, id, Term));
         } else {
-            this.logger.info(String.format("%x received %s rejection from %x at term %d", this.id, t, id, this.Term));
+            logger.info(String.format("%x received %s rejection from %x at term %d", this.id, t, id, Term));
         }
 
         votes.putIfAbsent(id, v);
@@ -533,7 +548,7 @@ public class Raft {
             if (m.Term == 0L) {
                 // todo
             }
-            if (m.Term > this.Term) {
+            if (m.Term > Term) {
                 // Never change our term in response to a PreVote
                 // We send pre-vote requests with a term in our future. If the
                 // pre-vote is granted, we will increment our term when we get a
@@ -542,15 +557,16 @@ public class Raft {
                 // term.
                 if (m.Type == MessageType.MsgPreVote || (m.Type == MessageType.MsgPreVoteResp && !m.Reject)) {
                 } else {
-                    this.logger.info(String.format("%x [term: %d] received a %s message with higher term from %x [term: %d]", this.id, this.Term, m.Type, m.From, m.Term));
+                    logger.info(String.format("%x [term: %d] received a %s message with higher term from %x [term: %d]", id, Term, m.Type, m.From, m.Term));
                     if (m.Type == MessageType.MsgApp || m.Type == MessageType.MsgHeartbeat || m.Type == MessageType.MsgSnap) {
-                        this.becomeFollower(m.Term, m.From);
+                        becomeFollower(m.Term, m.From);
                     } else {
-                        this.becomeFollower(m.Term, 0L);
+                        // there is no lead yet
+                        becomeFollower(m.Term, 0L);
                     }
                 }
-            } else if (m.Term < this.Term) {
-                if ((this.checkQuorum || this.preVote) && (m.Type == MessageType.MsgHeartbeat || m.Type == MessageType.MsgApp)) {
+            } else if (m.Term < Term) {
+                if ((checkQuorum || preVote) && (m.Type == MessageType.MsgHeartbeat || m.Type == MessageType.MsgApp)) {
                     // We have received messages from a leader at a lower term. It is possible
                     // that these messages were simply delayed in the network, but this could
                     // also mean that this node has advanced its term number during a network
@@ -572,18 +588,18 @@ public class Raft {
                     // with "pb.MsgAppResp" of higher term would force leader to step down.
                     // However, this disruption is inevitable to free this stuck node with
                     // fresh election. This can be prevented with Pre-Vote phase.
-                    this.send(pb.Message.builder().To(m.From).Type(MessageType.MsgAppResp).build());
+                    send(pb.Message.builder().To(m.From).Type(MessageType.MsgAppResp).build());
                 } else if (m.Type == MessageType.MsgPreVote) {
                     // Before Pre-Vote enable, there may have candidate with higher term,
                     // but less log. After update to Pre-Vote, the cluster may deadlock if
                     // we drop messages with a lower term.
-                    this.logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] rejected %s from %x [logterm: %d, index: %d] at term %d",
-                            this.id, this.raftLog.lastTerm(), this.raftLog.lastIndex(), this.Vote, m.Type, m.From, m.LogTerm, m.Index, this.Term));
-                    this.send(pb.Message.builder().To(m.From).Term(this.Term).Type(MessageType.MsgPreVoteResp).Reject(true).build());
+                    logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] rejected %s from %x [logterm: %d, index: %d] at term %d",
+                            id, raftLog.lastTerm(), raftLog.lastIndex(), Vote, m.Type, m.From, m.LogTerm, m.Index, Term));
+                    send(pb.Message.builder().To(m.From).Term(Term).Type(MessageType.MsgPreVoteResp).Reject(true).build());
                 } else {
                     // ignore other cases
-                    this.logger.info(String.format("%x [term: %d] ignored a %s message with lower term from %x [term: %d]",
-                            this.id, this.Term, m.Type, m.From, m.Term));
+                    logger.info(String.format("%x [term: %d] ignored a %s message with lower term from %x [term: %d]",
+                            id, Term, m.Type, m.From, m.Term));
                 }
                 return;
             }
@@ -591,7 +607,7 @@ public class Raft {
 
         // Handle message type
         if (m.Type == MessageType.MsgHup) {
-            if (this.state != StateType.StateLeader) {
+            if (state != StateType.StateLeader) {
                 // Not leader -> MsgHup -> campaign
                 Entry[] ents = raftLog.slice(raftLog.applied + 1, raftLog.committed + 1, Long.MAX_VALUE);
 
@@ -601,34 +617,34 @@ public class Raft {
                     return;
                 }
 
-                logger.info(String.format("%x is starting a new election at term %d", this.id, this.Term));
-                if (this.preVote) {
+                logger.info(String.format("%x is starting a new election at term %d", id, Term));
+                if (preVote) {
                     campaign(CampaignType.campaignPreElection);
                 } else {
                     campaign(CampaignType.campaignElection);
                 }
             } else {
-                this.logger.debug(String.format("%x ignoring MsgHup because already leader", this.id));
+                logger.debug(String.format("%x ignoring MsgHup because already leader", id));
             }
         }
 
         else if (m.Type == MessageType.MsgVote || m.Type == MessageType.MsgPreVote) {
-            if (this.isLearner) {
+            if (isLearner) {
                 // TODO learner may need to vote, in case of node down when confchange.
-                this.logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: learner can not vote",
-                        this.id, this.raftLog.lastTerm(), this.raftLog.lastIndex(), this.Vote, m.Type, m.From, m.LogTerm, m.Index, this.Term));
+                logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: learner can not vote",
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), Vote, m.Type, m.From, m.LogTerm, m.Index, Term));
                 return;
             }
             // We can vote if this is a repeat of a vote we've already cast...
-            boolean canVote = this.Vote == m.From ||
+            boolean canVote = Vote == m.From ||
                     // ...we haven't voted and we don't think there's a leader yet in this term...
-                    (this.Vote == 0L && this.lead == 0L) ||
+                    (Vote == 0L && lead == 0L) ||
                     // ...or this is a PreVote for a future term...
-                    (m.Type == MessageType.MsgPreVote && m.Term > this.Term);
+                    (m.Type == MessageType.MsgPreVote && m.Term > Term);
             // ...and we believe the candidate is up to date.
-            if (canVote && this.raftLog.isUpToDate(m.Index, m.LogTerm)) {
-                this.logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] cast %s for %x [logterm: %d, index: %d] at term %d",
-                        this.id, this.raftLog.lastTerm(), this.raftLog.lastIndex(), this.Vote, m.Type, m.From, m.LogTerm, m.Index, this.Term));
+            if (canVote && raftLog.isUpToDate(m.Index, m.LogTerm)) {
+                logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] cast %s for %x [logterm: %d, index: %d] at term %d",
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), Vote, m.Type, m.From, m.LogTerm, m.Index, Term));
                 // When responding to Msg{Pre,}Vote messages we include the term
                 // from the message, not the local term. To see why consider the
                 // case where a single node was previously partitioned away and
@@ -638,22 +654,22 @@ public class Raft {
                 // the message (it ignores all out of date messages).
                 // The term in the original message and current local term are the
                 // same in the case of regular votes, but different for pre-votes.
-                this.send(pb.Message.builder().To(m.From).Term(m.Term).Type(Util.voteRespMsgType(m.Type)).build());
+                send(pb.Message.builder().To(m.From).Term(m.Term).Type(Util.voteRespMsgType(m.Type)).build());
                 if (m.Type == MessageType.MsgVote) {
                     // Only record real votes.
-                    this.electionElapsed = 0;
-                    this.Vote = m.From;
+                    electionElapsed = 0;
+                    Vote = m.From;
                 }
 
             } else {
-                this.logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] rejected %s from %x [logterm: %d, index: %d] at term %d",
-                        this.id, this.raftLog.lastTerm(), this.raftLog.lastIndex(), this.Vote, m.Type, m.From, m.LogTerm, m.Index, this.Term));
-                this.send(pb.Message.builder().To(m.From).Term(this.Term).Type(Util.voteRespMsgType(m.Type)).Reject(true).build());
+                logger.info(String.format("%x [logterm: %d, index: %d, vote: %x] rejected %s from %x [logterm: %d, index: %d] at term %d",
+                        id, raftLog.lastTerm(), raftLog.lastIndex(), Vote, m.Type, m.From, m.LogTerm, m.Index, Term));
+                send(pb.Message.builder().To(m.From).Term(Term).Type(Util.voteRespMsgType(m.Type)).Reject(true).build());
             }
         }
 
         else {
-            this.step.step(this, m);
+            step.step(this, m);
         }
 
     }
@@ -783,10 +799,11 @@ class stepCandidate implements stepFunc {
             case MsgSnap:
                 r.becomeFollower(m.Term, m.From);
                 r.handleSnapshot(m);
-            case MsgPreVoteResp:case MsgVoteResp:
+            case MsgPreVoteResp:
+            case MsgVoteResp:
                 if (m.Type == myVoteRespType) {
                     int gr = r.poll(m.From, m.Type, !m.Reject);
-                    r.logger.info(String.format("%x [quorum:%d] has received %d %s votes and %d vote rejections", r.id, r.quorum(), gr));
+                    r.logger.info(String.format("%x [quorum:%d] has received %d %s votes and %d vote rejections", r.id, r.quorum(), gr, m.Type, r.votes.size() - gr));
 
                     // if become leader
                     int q = r.quorum();
@@ -804,7 +821,7 @@ class stepCandidate implements stepFunc {
                     }
                 }
             case MsgTimeoutNow:
-                r.logger.debug(String.format("%x [term %d state %v] ignored MsgTimeoutNow from %x", r.id, r.Term, r.state, m.From));
+                r.logger.debug(String.format("%x [term %d state %s] ignored MsgTimeoutNow from %x", r.id, r.Term, r.state, m.From));
         }
 
     }
@@ -831,6 +848,15 @@ class stepFollower implements stepFunc {
                 r.electionElapsed = 0;
                 r.lead = m.From;
                 r.handleAppendEntries(m);
+            case MsgHeartbeat:
+                r.electionElapsed = 0;
+                r.lead = m.From;
+                r.handleHeartbeat(m);
+            case MsgSnap:
+            case MsgTransferLeader:
+            case MsgTimeoutNow:
+            case MsgReadIndex:
+
 
         }
     }
@@ -866,6 +892,7 @@ class stepLeader implements stepFunc {
                     return;
                 }
 
+                // conf change
                 for (int i = 0; i < m.Entries.length; i++) {
                     if (m.Entries[i].Type == EntryType.EntryConfChange) {
                         if (r.pendingConfIndex > r.raftLog.applied) {
@@ -997,6 +1024,38 @@ class tickElection implements tick {
             r.electionElapsed = 0;
             // which Term???
             r.Step(pb.Message.builder().From(r.id).Term(r.Term).Type(MessageType.MsgHup).build());
+        }
+    }
+}
+
+// tickHeartbeat is run by leaders to send a MsgBeat after r.heartbeatTimeout.
+class tickHeartbeat implements tick {
+    @Override
+    public void tick(Raft r) {
+        LOG.debug(r.id + " tick heartbeat heartbeatElapsed " + r.heartbeatElapsed
+                + " electionElapsed " + r.electionElapsed + " heartbeatTimeout " + r.heartbeatTimeout + " electionTimeout " + r.electionTimeout);
+        r.heartbeatElapsed++;
+        r.electionElapsed++;
+
+        if (r.electionElapsed >= r.electionTimeout) {
+            r.electionElapsed = 0;
+            if (r.checkQuorum) {
+                r.Step(Message.builder().From(r.id).Type(MsgCheckQuorum).build());
+            }
+            // If current leader cannot transfer leadership in electionTimeout, it becomes leader again.
+            if (r.state == StateType.StateLeader && r.leadTransferee != 0L) {
+                r.abortLeaderTransfer();
+            }
+        }
+
+        if (r.state != StateType.StateLeader) {
+            return;
+        }
+
+        if (r.heartbeatElapsed >= r.heartbeatTimeout) {
+            r.heartbeatElapsed = 0;
+            // set term ???
+            r.Step(Message.builder().From(r.id).Type(MsgBeat).Term(r.Term).build());
         }
     }
 }

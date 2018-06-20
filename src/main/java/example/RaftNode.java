@@ -84,8 +84,8 @@ public class RaftNode {
 
         Config c = Config.builder()
                 .ID((long) id)
-                .electionTick(5)
-                .heartbeatTick(10)
+                .electionTick(10)
+                .heartbeatTick(3)
                 .storage(raftStorage)
                 .maxSizePerMsg(1024L * 1024L)
                 .maxInflightMsgs(256)
@@ -114,11 +114,12 @@ public class RaftNode {
 
         transport.start(id);
 
-        for (int i = 0; i < rpeers.length; i++) {
-            if (i + 1 != this.id) {
-                // transport add peer
-            }
-        }
+        // hard coded peer
+//        for (int i = 0; i < rpeers.length; i++) {
+//            if (i + 1 != this.id) {
+//                // transport add peer
+//            }
+//        }
 
         // mainly start listener
         new Thread(() -> this.serveRaft()).start();

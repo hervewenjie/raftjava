@@ -1,7 +1,9 @@
 package raft;
 
-import javafx.util.Pair;
+import pb.Entry;
+import util.ArrayUtil;
 
+import java.lang.reflect.Array;
 import java.util.Arrays;
 
 /**
@@ -18,32 +20,33 @@ public class Unstable {
     pb.Snapshot snapshot;
     // all entries that have not yet been written to storage.
     pb.Entry[] entries = {};
+
     long offset;
 
     Logger logger;
 
-    Pair<Long, Boolean> maybeLastIndex() {
+    long maybeLastIndex() {
         int l;
         if ((l = entries.length) != 0) {
-            return new Pair<>(this.offset + Long.valueOf(l) - 1, true);
+            return offset + l - 1;
         }
         if (snapshot != null) {
-            return new Pair<>(snapshot.Metadata.Index, true);
+            return snapshot.Metadata.Index;
         }
-        return new Pair<>(0L, false);
+        return 0L;
     }
 
-    Pair<Long, Boolean> maybeFirstIndex() {
-        if (this.snapshot != null) {
-            return new Pair<>(this.snapshot.Metadata.Index + 1, true);
+    long maybeFirstIndex() {
+        if (snapshot != null) {
+            return snapshot.Metadata.Index + 1;
         }
-        return new Pair<>(0L, false);
+        return 0L;
     }
 
     //  maybeTerm returns the term of the entry at index i, if there is any
-    long maybeTerm(Long i) {
-        if (i < this.offset) {
-            if (this.snapshot == null) {
+    long maybeTerm(long i) {
+        if (i < offset) {
+            if (snapshot == null) {
                 return -1L;
             }
             if (this.snapshot.Metadata.Index == i) {
@@ -51,7 +54,7 @@ public class Unstable {
             }
             return -1L;
         }
-        long last = this.maybeLastIndex().getKey();
+        long last = this.maybeLastIndex();
         if (i > last) {
             return -1L;
         }
@@ -63,6 +66,8 @@ public class Unstable {
         if (after == offset + entries.length) {
             // after is the next index in the u.entries
             // directly append
+            logger.info(String.format("after %d is the next index in the u.entries directly append", after));
+            entries = ArrayUtil.append(entries, ents);
         } else if (after <= offset) {
             logger.info(String.format("replace the unstable entries from index %d", after));
             // The log is being truncated to before our current offset
@@ -73,7 +78,8 @@ public class Unstable {
             // truncate to after and copy to u.entries
             // then append
             logger.info(String.format("truncate the unstable entries before index %d", after));
-            // TODO entris append
+            entries = ArrayUtil.append(ArrayUtil.asArray(Entry.builder().build()), slice(offset, after));
+            entries = ArrayUtil.append(entries, ents);
         }
     }
 
@@ -119,4 +125,20 @@ public class Unstable {
         entries = null;
         snapshot = s;
     }
+
+    private Entry[] slice(long lo, long hi) {
+        mustCheckOutOfBounds(lo, hi);
+        return Arrays.copyOfRange(entries, (int) (lo - offset), (int) (hi - offset));
+    }
+
+    private void mustCheckOutOfBounds(long lo, long hi) {
+        if (lo > hi) {
+            logger.panic(String.format("invalid unstable.slice %d > %d", lo, hi));
+        }
+        long upper = offset + entries.length;
+        if (lo < offset || hi > upper) {
+            logger.panic(String.format("unstable.slice[%d,%d) out of bound [%d,%d]", lo, hi, offset, upper));
+        }
+    }
+
 }

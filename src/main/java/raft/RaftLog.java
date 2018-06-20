@@ -72,6 +72,14 @@ public class RaftLog {
         return 0L;
     }
 
+    public boolean maybeCommit(long maxIndex, long term) {
+        if (maxIndex > committed && zeroTermOnErrCompacted(term(maxIndex)) == term) {
+            commitTo(maxIndex);
+            return true;
+        }
+        return false;
+    }
+
     public long append(pb.Entry... ents) {
         if (ents.length == 0) {
             return lastIndex();
@@ -142,7 +150,7 @@ public class RaftLog {
 
     public long firstIndex() {
         long i;
-        if ((i = this.unstable.maybeFirstIndex().getKey()) >= 0L) {
+        if ((i = this.unstable.maybeFirstIndex()) >= 0L) {
             return i;
         }
         i = this.storage.LastIndex();
@@ -150,7 +158,7 @@ public class RaftLog {
     }
 
     public long lastIndex() {
-        long i = unstable.maybeLastIndex().getKey();
+        long i = unstable.maybeLastIndex();
         if (i >= 0L) {
             return i;
         }
@@ -160,11 +168,11 @@ public class RaftLog {
 
     public void commitTo(Long tocommit) {
         // never decrease commit
-        if (this.committed < tocommit) {
-            if (this.lastIndex() < tocommit) {
-                this.logger.panic(String.format("tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?", tocommit, this.lastIndex()));
+        if (committed < tocommit) {
+            if (lastIndex() < tocommit) {
+                logger.panic(String.format("tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?", tocommit, this.lastIndex()));
             }
-            this.committed = tocommit;
+            committed = tocommit;
         }
     }
 

@@ -215,6 +215,7 @@ public class NodeImpl implements Node {
             }
 
             if (advancec != null && advancec.peek() != null) {
+                advancec.poll();
                 if (prevHardSt.Commit != 0) {
                     r.raftLog.appliedTo(prevHardSt.Commit);
                 }

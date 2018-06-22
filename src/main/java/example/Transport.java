@@ -89,13 +89,13 @@ public class Transport {
 
     public void Send(Message[] msgs) {
         if (msgs == null || msgs.length == 0) {
-            LOG.warn("transport sending empty messages");
+//            LOG.warn("transport sending empty messages");
+            return;
         }
         for (int i = 0; i < msgs.length; i++) {
             Message m = msgs[i];
             if (m.To == 0) { continue; }
             send(m);
-            LOG.debug("transport sending to " + m.To);
         }
     }
 
@@ -106,7 +106,8 @@ public class Transport {
             os.writeObject(m);
             os.close();
             socket.close();
-        } catch (IOException e) {
+            LOG.info(ID + " send message to " + m.To + " " + JSON.toJSONString(m));
+        } catch (Exception e) {
             LOG.error("transport send from " + m.From + " to " + m.To + " failed");
         }
     }

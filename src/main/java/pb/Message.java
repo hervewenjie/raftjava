@@ -22,4 +22,7 @@ public class Message implements Serializable {
     public long              RejectHint; // `protobuf:"varint,11,opt,name=rejectHint" json:"rejectHint"`
     public byte[]            Context;    // `protobuf:"bytes,12,opt,name=context" json:"context,omitempty"`
     public byte[]            XXX_unrecognized; //`json:"-"`
+
+    @Builder.Default
+    public long timestamp = System.currentTimeMillis();
 }

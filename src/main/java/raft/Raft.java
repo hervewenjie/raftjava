@@ -1,5 +1,6 @@
 package raft;
 
+import com.alibaba.fastjson.JSON;
 import javafx.util.Pair;
 import lombok.Builder;
 import pb.*;
@@ -43,7 +44,7 @@ public class Raft {
     Map<Long, Boolean> votes;
 
     @Builder.Default
-    final List<Message> msgs = new ArrayList<>();
+    private List<Message> msgs = new ArrayList<>();
 
     // the leader id
     long lead;
@@ -219,6 +220,14 @@ public class Raft {
         return SoftState.builder().Lead(lead).RaftState(state).build();
     }
 
+    public HardState hardState() {
+        return HardState.builder()
+                .Term(Term)
+                .Vote(Vote)
+                .Commit(raftLog.committed)
+                .build();
+    }
+
     public int quorum() {
         return prs.size() / 2 + 1;
     }
@@ -271,7 +280,7 @@ public class Raft {
             }
         }
         // append to array, if no space, new array is allocated
-        msgs.add(m);
+        msgsAdd(m);
     }
 
     public Progress getProgress(long id) {
@@ -288,12 +297,28 @@ public class Raft {
         Message m = pb.Message.builder().build();
         m.To = to;
 
-        Long term = raftLog.term(pr.Next - 1);
+        long term = raftLog.term(pr.Next - 1);
         pb.Entry[] ents = raftLog.entries(pr.Next, maxMsgSize);
 
-        if (term == null || ents == null) {
+        if (term == 0L || ents == null) {
             // send snapshot if we failed to get term or entries
-            // TODO
+            if (!pr.RecentActive) {
+                logger.debug(String.format("ignore sending snapshot to %x since it is not recently active", to));
+                return;
+            }
+
+            m.Type = MsgSnap;
+            Snapshot snapshot = raftLog.snapshot();
+            if (Ready.IsEmptySnap(snapshot)) {
+                Panic.panic("need non-empty snapshot");
+            }
+            m.Snapshot = snapshot;
+            long sindex = snapshot.Metadata.Index;
+            long sterm  = snapshot.Metadata.Term;
+            logger.debug(String.format("%x [firstindex: %d, commit: %d] sent snapshot[index: %d, term: %d] to %x [%s]",
+                    id, raftLog.firstIndex(), raftLog.committed, sindex, sterm, to, pr));
+            pr.becomeSnapshot(sindex);
+            logger.debug(String.format("%x paused sending replication messages to %x [%s]", id, to, pr));
 
         } else {
             m.Type = MessageType.MsgApp;
@@ -510,7 +535,7 @@ public class Raft {
         for (long id : prs.keySet()) {
             // skip itself
             if (id == this.id) continue;
-            logger.info(String.format("%x [logterm: %d, index: %d] sent %s request to %x at term %d",
+            logger.info(String.format("campaign %x [logterm: %d, index: %d] sent %s request to %x at term %d",
                     this.id, raftLog.lastTerm(), raftLog.lastIndex(), voteMsg, id, Term));
 
             byte[] ctx = null;
@@ -761,6 +786,21 @@ public class Raft {
             if (ents[i].Type == EntryType.EntryConfChange) { n++; }
         }
         return n;
+    }
+
+    public synchronized void msgsClear() {
+        msgs.clear();
+    }
+
+    public synchronized void msgsAdd(Message m) {
+//        for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
+//            System.out.println(ste);
+//        }
+        msgs.add(m);
+    }
+
+    public synchronized Message[] msgs() {
+        return ArrayUtil.toArray(msgs);
     }
 
 }
@@ -1058,6 +1098,7 @@ class tickHeartbeat implements tick {
             r.Step(Message.builder().From(r.id).Type(MsgBeat).Term(r.Term).build());
         }
     }
+
 }
 
 

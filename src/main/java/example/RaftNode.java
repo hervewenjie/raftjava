@@ -1,5 +1,6 @@
 package example;
 
+import com.alibaba.fastjson.JSON;
 import javafx.util.Pair;
 import lombok.Builder;
 import pb.ConfChange;
@@ -7,7 +8,7 @@ import pb.ConfState;
 import pb.Entry;
 import pb.Snapshot;
 import raft.*;
-import time.Tiker;
+import time.Ticker;
 import util.Encoder;
 import util.LOG;
 import util.Panic;
@@ -84,8 +85,8 @@ public class RaftNode {
 
         Config c = Config.builder()
                 .ID((long) id)
-                .electionTick(10)
-                .heartbeatTick(3)
+                .electionTick(TestAllConfig.electionTick)
+                .heartbeatTick(TestAllConfig.heartbeatTick)
                 .storage(raftStorage)
                 .maxSizePerMsg(1024L * 1024L)
                 .maxInflightMsgs(256)
@@ -132,20 +133,12 @@ public class RaftNode {
         Snapshot snapshot = loadSnapshot();
         WAL w = openWAL(snapshot);
         w.ReadAll();
-        raftStorage = NewMemoryStorage();
+        raftStorage = MemoryStorage.NewMemoryStorage();
         if (snapshot != null) {
             raftStorage.ApplySnapshot(snapshot);
         }
         // TODO
         return w;
-    }
-
-    public MemoryStorage NewMemoryStorage() {
-        MemoryStorage m = new MemoryStorage();
-        // When starting from scratch populate the list with a dummy entry at term zero.
-        m.ents = new Entry[1];
-        m.ents[0] = Entry.builder().build();
-        return m;
     }
 
     public WAL openWAL(Snapshot snapshot) {
@@ -166,7 +159,7 @@ public class RaftNode {
         snapshotIndex = snapshot.Metadata.Index;
         appliedIndex = snapshot.Metadata.Index;
 
-        Tiker tiker = new Tiker();
+        Ticker ticker = new Ticker();
 
         // send proposals over raft
         new Thread(() -> {
@@ -179,7 +172,8 @@ public class RaftNode {
                     nodeImpl.Propose(null, Encoder.encode(kv));
                 }
                 else if (confChangeC.peek() != null) {
-
+                    confChangeC.poll();
+                    LOG.debug("serveChannels confChange " );
                 }
                 try {
                     Thread.sleep(1000);
@@ -192,13 +186,12 @@ public class RaftNode {
         // event loop on raft state machine updates
         while (true) {
             // tick
-            if (tiker.isTimeout()) {
+            if (ticker.isTimeout()) {
                 nodeImpl.Tick();
             }
 
             // store raft entries to wal, then publish over commit channel
             if (nodeImpl.Ready().peek() != null) {
-                LOG.debug("RaftNode got Ready...");
                 Ready rd = nodeImpl.Ready().poll();
                 wal.Save(rd.HardState, rd.Entries);
                 if (Ready.IsEmptySnap(rd.Snapshot)) {
@@ -207,9 +200,14 @@ public class RaftNode {
                     publishSnapshot(rd.Snapshot);
                 }
                 // Append!! & Send!!
+
+                // memory storage append entries
                 raftStorage.Append(rd.Entries);
+                // transport send messages
                 transport.Send(rd.Messages);
+                // publish???
                 publishEntries(entriesToApply(rd.CommittedEntries));
+                // ???
                 maybeTriggerSnapshot();
 
                 // notify node advance

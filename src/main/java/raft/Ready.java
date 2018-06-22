@@ -51,10 +51,13 @@ public class Ready {
     // written to disk or if an asynchronous write is permissible.
     public boolean MustSync;
 
-    static HardState emptyState = new HardState();
+    static HardState emptyState = pb.HardState.builder().build();
 
     public boolean containsUpdates() {
-        return SoftState != null || !IsEmptyHardState(HardState) || !IsEmptySnap(Snapshot) || (Entries != null && Entries.length > 0)
+        return SoftState != null
+                || !IsEmptyHardState(HardState)
+                || !IsEmptySnap(Snapshot)
+                || (Entries != null && Entries.length > 0)
                 || (CommittedEntries != null && CommittedEntries.length > 0)
                 || (Messages != null && Messages.length > 0)
                 || (ReadStates != null && ReadStates.length > 0);

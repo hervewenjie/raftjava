@@ -68,6 +68,7 @@ public class Progress {
     // MsgApps, is currently waiting for a snapshot, or has reached the
     // MaxInflightMsgs limit.
     public boolean IsPaused() {
+        if (State == null) return false;
         switch (State) {
             case ProgressStateProbe:
                 return Paused;
@@ -90,6 +91,11 @@ public class Progress {
 
     public void becomeProbe() {
 
+    }
+
+    public void becomeSnapshot(long snapshoti) {
+        resetState(ProgressStateSnapshot);
+        PendingSnapshot = snapshoti;
     }
 
     // maybeUpdate returns false if the given n index comes from an outdated message.

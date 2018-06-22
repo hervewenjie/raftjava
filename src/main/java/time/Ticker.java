@@ -3,13 +3,13 @@ package time;
 /**
  * Created by chengwenjie on 2018/6/13.
  */
-public class Tiker {
+public class Ticker {
 
     static long TIMEOUT = 3000;
 
     private long start;
 
-    public Tiker() {
+    public Ticker() {
         start = System.currentTimeMillis();
     }
 
@@ -23,9 +23,9 @@ public class Tiker {
     }
 
     public static void main(String[] args) {
-        Tiker tiker = new Tiker();
+        Ticker ticker = new Ticker();
         while (true) {
-            if (tiker.isTimeout()) {
+            if (ticker.isTimeout()) {
                 System.out.println("timeout...");
             }
             try {

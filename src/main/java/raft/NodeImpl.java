@@ -34,7 +34,7 @@ public class NodeImpl implements Node {
 
     Logger logger;
 
-    public static pb.HardState emptyState = new pb.HardState();
+    public static pb.HardState emptyState = HardState.builder().build();
 
     public static Boolean isHardStateEqual(pb.HardState a, pb.HardState b) {
         return a.Term == b.Term && a.Vote == b.Vote && a.Commit == b.Commit;
@@ -44,9 +44,10 @@ public class NodeImpl implements Node {
     // It appends a ConfChangeAddNode entry for each given peer to the initial log.
     public static NodeImpl startNode(Config c, Peer[] peers) {
         Raft r = Raft.newRaft(c);
-        // become the follower at term 1 and apply initial configuration
-        // entries of term 1
+        // become the follower at term 1
         r.becomeFollower(1L, 0L);
+        // apply initial configuration
+        // entries of term 1
         for (int i = 0; i < peers.length; i++) {
             ConfChange cc = pb.ConfChange.builder()
                     .type(ConfChangeType.ConfChangeAddNode)
@@ -124,7 +125,6 @@ public class NodeImpl implements Node {
         for (;;) {
             // deal with...
             if (advancec != null) {
-                LOG.debug("advance not null");
                 readyc = null;
             } else {
                 rd = newReady(r, prevSoftSt, prevHardSt);
@@ -165,6 +165,7 @@ public class NodeImpl implements Node {
                 if (pm.result != null) {
                     // TODO
                 }
+
             }
             // receive message?
             if (recvc.peek() != null) {
@@ -173,6 +174,8 @@ public class NodeImpl implements Node {
                 if (pr != null || Util.IsResponseMsg(m.Type)) {
                     r.Step(m);
                 }
+
+                continue;
             }
 
             if (confc.peek() != null) {
@@ -182,11 +185,13 @@ public class NodeImpl implements Node {
             if (tickc.peek() != null) {
                 tickc.poll();
                 r.tick.tick(r);
+
+                // fucking hack
+                continue;
             }
 
             // ready
             if (readyc != null && rd != null && rd.containsUpdates()) {
-                LOG.debug("there is a ready!!!");
                 readyc = this.readyc;
                 readyc.add(rd);
                 if (rd.SoftState != null) {
@@ -197,12 +202,14 @@ public class NodeImpl implements Node {
                     prevLastUnstablet = rd.Entries[rd.Entries.length - 1].Term;
                     havePrevLastUnstablei = true;
                 }
-                if (!rd.IsEmptyHardState(rd.HardState)) {
+                if (!rd.IsEmptyHardState(rd.HardState)
+                        // hack???
+                        && rd.Snapshot != null) {
                     prevSnapi = rd.Snapshot.Metadata.Index;
                 }
 
                 // empty message
-                r.msgs.clear();
+                r.msgsClear();
                 r.readStates = null;
                 advancec = this.advancec;
             }
@@ -283,11 +290,24 @@ public class NodeImpl implements Node {
         Ready rd = Ready.builder()
                 .Entries(r.raftLog.unstableEntries())
                 .CommittedEntries(r.raftLog.nextEnts())
-                .Messages(ArrayUtil.toArray(r.msgs))
+                .Messages(r.msgs())
                 .build();
 
-        // TODO
-
+        SoftState softSt = r.softState();
+        if (!softSt.equals(prevSoftSt)) {
+            rd.SoftState = softSt;
+        }
+        HardState hardSt = r.hardState();
+        if (!isHardStateEqual(hardSt, prevHardSt)) {
+            rd.HardState = hardSt;
+        }
+        if (r.raftLog.unstable.snapshot != null) {
+            rd.Snapshot = r.raftLog.unstable.snapshot;
+        }
+        if (r.readStates != null && r.readStates.length != 0) {
+            rd.ReadStates = r.readStates;
+        }
+        rd.MustSync = MustSync(rd.HardState, prevHardSt, rd.Entries.length);
         return rd;
     }
 
@@ -342,18 +362,18 @@ public class NodeImpl implements Node {
     }
 
     @Override
-    public void Advance() {
-        this.advancec.add(new Object());
+    synchronized public void Advance() {
+        advancec.add(new Object());
     }
 
     @Override
     public void Stop() {
-        this.stop.add(new Object());
+        stop.add(new Object());
     }
 
     @Override
     public Queue<Ready> Ready() {
-        return this.readyc;
+        return readyc;
     }
 
     @Override
@@ -364,5 +384,11 @@ public class NodeImpl implements Node {
     @Override
     public ConfState ApplyConfChange(ConfChange cc) {
         return null;
+    }
+
+    // MustSync returns true if the hard state and count of Raft entries indicate
+    // that a synchronous write to persistent storage is required.
+    public static boolean MustSync(HardState st, HardState prevst, int entsnum) {
+        return entsnum != 0 || st.Vote != prevst.Vote || st.Term != prevst.Term;
     }
 }

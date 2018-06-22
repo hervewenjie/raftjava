@@ -6,27 +6,27 @@ package raft;
 public class LoggerImpl implements Logger {
     @Override
     public void debug(String s) {
-        System.out.println("[DEBUG] " + s);
+        System.out.println("[DEBUG] " + Thread.currentThread().getName() + " " + s);
     }
 
     @Override
     public void info(String s) {
-        System.out.println("[INFO ] " + s);
+        System.out.println("[INFO ] " + Thread.currentThread().getName() + " " + s);
     }
 
     @Override
     public void warning(String s) {
-        System.out.println("[WARN ] " + s);
+        System.out.println("[WARN ] " + Thread.currentThread().getName() + " " + s);
     }
 
     @Override
     public void error(String s) {
-        System.err.println("[ERROR] " + s);
+        System.err.println("[ERROR] " + Thread.currentThread().getName() + " " + s);
     }
 
     @Override
     public void panic(String s) {
-        System.err.println("[PANIC] " + s);
+        System.err.println("[PANIC] " + Thread.currentThread().getName() + " " + s);
         System.exit(1);
     }
 }

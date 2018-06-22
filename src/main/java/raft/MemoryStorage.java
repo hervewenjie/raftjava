@@ -8,6 +8,7 @@ import pb.Snapshot;
 import util.ArrayUtil;
 import util.LOG;
 
+import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -20,7 +21,7 @@ public class MemoryStorage implements Storage {
     public pb.HardState hardState;
     public pb.Snapshot snapshot;
     // ents[i] has raft log position i+snapshot.Metadata.Index
-    public pb.Entry[] ents;
+    public pb.Entry[] ents = {};
 
     Lock lock = new ReentrantLock();
 
@@ -46,7 +47,7 @@ public class MemoryStorage implements Storage {
 
     @Override
     public Pair<HardState, ConfState> initialState() {
-        return new Pair<>(new HardState(), new ConfState());
+        return new Pair<>(HardState.builder().build(), new ConfState());
     }
 
     @Override
@@ -56,6 +57,13 @@ public class MemoryStorage implements Storage {
 
     public long firstIndex() {
         return ents[0].Index + 1;
+    }
+
+    public static MemoryStorage NewMemoryStorage() {
+        MemoryStorage m = new MemoryStorage();
+        // When starting from scratch populate the list with a dummy entry at term zero.
+        m.ents = ArrayUtil.asArray(Entry.builder().build());
+        return m;
     }
 
     public long lastIndex() {
@@ -96,7 +104,7 @@ public class MemoryStorage implements Storage {
 
         long offset = entries[0].Index - ents[0].Index;
         if (ents.length > offset) {
-            ents = ArrayUtil.append(new Entry[0], entries);
+            ents = Arrays.copyOfRange(ents, 0, (int) offset);
             ents = ArrayUtil.append(ents, entries);
         } else if (ents.length == offset) {
             ents = ArrayUtil.append(ents, entries);

@@ -157,15 +157,15 @@ public class NodeImpl implements Node {
 
             // propose
             if (propc.peek() != null) {
-                LOG.debug("node run propc peek...");
                 MessageWithResult pm = propc.poll();
+                LOG.debug("node run propc peek message " + JSON.toJSONString(pm));
                 Message m = pm.m;
                 m.From = r.id;
                 r.Step(m);
                 if (pm.result != null) {
-                    // TODO
+                    // if wait, add "" indicates ok
+                    pm.result.add("");
                 }
-
             }
             // receive message?
             if (recvc.peek() != null) {
@@ -253,7 +253,7 @@ public class NodeImpl implements Node {
     }
 
     private void stepWait(pb.Message m) {
-        this.stepWithWaitOption(m, true);
+        stepWithWaitOption(m, true);
     }
 
     // Step advances the state machine using msgs. The ctx.Err() will be returned,
@@ -266,24 +266,25 @@ public class NodeImpl implements Node {
         Queue<MessageWithResult> ch = propc;
         MessageWithResult pm = MessageWithResult.builder().m(m).build();
         if (wait) {
-            pm.result = new ArrayBlockingQueue(1);
+            pm.result = new ArrayBlockingQueue<>(1);
         }
 
         // add to channel, fucked up logic
-        while (true) {
-            ch.add(pm);
-            if (!wait) return;
-            else break;
+        ch.add(pm);
+        if (!wait) return;
+
+        // wait here
+        LOG.debug("step with option, waiting...");
+        Object rsp = null;
+        try {
+            // time limit??? poll?
+            rsp = pm.result.take();
+        } catch (InterruptedException e) {
+            LOG.error("step with option, waiting failed");
         }
 
-        // wait
-        while (true) {
-            LOG.debug("step with option, waiting...");
-            MessageWithResult rsp = pm.result.poll();
-            if (rsp != null) return;
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {}
+        if (rsp != null && !rsp.equals("")) {
+            LOG.error("step with option, return not error");
         }
     }
 
@@ -331,7 +332,7 @@ public class NodeImpl implements Node {
     public void Propose(Context ctx, byte[] data) {
         Entry[] entries = new Entry[1];
         entries[0] = Entry.builder().Data(data).build();
-        this.stepWait(pb.Message.builder().Type(MessageType.MsgProp)
+        stepWait(pb.Message.builder().Type(MessageType.MsgProp)
                 .Entries(entries).build());
     }
 

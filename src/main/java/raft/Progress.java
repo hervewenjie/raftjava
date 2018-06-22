@@ -3,6 +3,7 @@ package raft;
 import lombok.Builder;
 import util.Panic;
 
+import static raft.ProgressStateType.ProgressStateProbe;
 import static raft.ProgressStateType.ProgressStateReplicate;
 import static raft.ProgressStateType.ProgressStateSnapshot;
 
@@ -28,7 +29,7 @@ public class Progress {
     //
     // When in ProgressStateSnapshot, leader should have sent out snapshot
     // before and stops sending any replication message.
-    public ProgressStateType State;
+    public ProgressStateType State = ProgressStateProbe; // default probe???
 
     // Paused is used in ProgressStateProbe.
     // When Paused is true, raft should pause sending replication message to this peer.
@@ -68,7 +69,6 @@ public class Progress {
     // MsgApps, is currently waiting for a snapshot, or has reached the
     // MaxInflightMsgs limit.
     public boolean IsPaused() {
-        if (State == null) return false;
         switch (State) {
             case ProgressStateProbe:
                 return Paused;
@@ -90,12 +90,21 @@ public class Progress {
     public void resume() {Paused = false;}
 
     public void becomeProbe() {
-
+        // If the original state is ProgressStateSnapshot, progress knows that
+        // the pending snapshot has been sent to this peer successfully, then
+        // probes from pendingSnapshot + 1.
+        if (State == ProgressStateSnapshot) {
+        }
     }
 
     public void becomeSnapshot(long snapshoti) {
         resetState(ProgressStateSnapshot);
         PendingSnapshot = snapshoti;
+    }
+
+    public void becomeReplicate() {
+        this.resetState(ProgressStateReplicate);
+        this.Next = this.Match + 1;
     }
 
     // maybeUpdate returns false if the given n index comes from an outdated message.
@@ -111,11 +120,6 @@ public class Progress {
             Next = n + 1;
         }
         return updated;
-    }
-
-    public void becomeReplicate() {
-        this.resetState(ProgressStateReplicate);
-        this.Next = this.Match + 1;
     }
 
     // needSnapshotAbort returns true if snapshot progress's Match

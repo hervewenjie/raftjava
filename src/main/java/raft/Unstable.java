@@ -25,9 +25,9 @@ public class Unstable {
 
     Logger logger;
 
-    long maybeLastIndex() {
-        int l;
-        if ((l = entries.length) != 0) {
+    public long maybeLastIndex() {
+        int l = entries.length;
+        if (l != 0) {
             return offset + l - 1;
         }
         if (snapshot != null) {
@@ -36,7 +36,7 @@ public class Unstable {
         return 0L;
     }
 
-    long maybeFirstIndex() {
+    public long maybeFirstIndex() {
         if (snapshot != null) {
             return snapshot.Metadata.Index + 1;
         }
@@ -44,7 +44,7 @@ public class Unstable {
     }
 
     //  maybeTerm returns the term of the entry at index i, if there is any
-    long maybeTerm(long i) {
+    public long maybeTerm(long i) {
         if (i < offset) {
             if (snapshot == null) {
                 return -1L;
@@ -126,7 +126,7 @@ public class Unstable {
         snapshot = s;
     }
 
-    private Entry[] slice(long lo, long hi) {
+    public Entry[] slice(long lo, long hi) {
         mustCheckOutOfBounds(lo, hi);
         return Arrays.copyOfRange(entries, (int) (lo - offset), (int) (hi - offset));
     }

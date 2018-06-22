@@ -39,6 +39,8 @@ public class HttpApi {
                     // propose to store
                     store.propose(key, value);
 
+                    // Optimistic-- no waiting for ack from raft. Value is not yet
+                    // committed so a subsequent GET on the key may return old value
                 }
                 // GET
                 else if (requestMethod.equalsIgnoreCase("GET")) {

@@ -1,6 +1,7 @@
 package raft;
 
 import lombok.Builder;
+import pb.Message;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -31,7 +32,7 @@ public class ReadOnly {
     // advance advances the read only request queue kept by the readonly struct.
     // It dequeues the requests until it finds the read only request that has
     // the same context as the given `m`.
-    public ReadIndexStatus[] advance() {
+    public ReadIndexStatus[] advance(Message m) {
         return null;
     }
 

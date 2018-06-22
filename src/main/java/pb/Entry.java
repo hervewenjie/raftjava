@@ -17,4 +17,8 @@ public class Entry implements Marshaler {
     public byte[] Marshal() {
         return new byte[0];
     }
+
+    public int Size() {
+        return 0;
+    }
 }

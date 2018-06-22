@@ -2,7 +2,7 @@ package pb;
 
 import lombok.Builder;
 
-import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * Created by chengwenjie on 2018/6/1.
@@ -10,5 +10,6 @@ import java.util.Queue;
 @Builder
 public class MessageWithResult {
     public pb.Message               m;
-    public Queue<MessageWithResult> result;
+    // should be error here
+    public BlockingQueue<Object> result;
 }

@@ -5,7 +5,7 @@ package util;
  */
 public class Panic {
     public static void panic(String s) {
-        System.err.println("cannot specify both newRaft(peers, learners) and ConfState.(Nodes, Learners)");
+        System.err.println(Thread.currentThread().getName() + " " + s);
         System.exit(1);
     }
 }

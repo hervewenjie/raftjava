@@ -291,7 +291,8 @@ public class Raft {
 
     // sendAppend sends RPC, with entries to the given peer.
     public void sendAppend(long to) {
-        Progress pr = getProgress(id);
+        LOG.info("leader send append");
+        Progress pr = getProgress(to);
         if (pr.IsPaused()) return;
 
         Message m = pb.Message.builder().build();
@@ -300,6 +301,9 @@ public class Raft {
         long term = raftLog.term(pr.Next - 1);
         pb.Entry[] ents = raftLog.entries(pr.Next, maxMsgSize);
 
+        LOG.info("send append pr " + JSON.toJSONString(pr));
+        LOG.info("send append term " + term);
+        LOG.info("send append ents " + ents);
         if (term == 0L || ents == null) {
             // send snapshot if we failed to get term or entries
             if (!pr.RecentActive) {
@@ -329,8 +333,10 @@ public class Raft {
             int n = m.Entries.length;
             if (n != 0) {
                 switch (pr.State) {
+                    // optimistically increase the next when in ProgressStateReplicate
+                    // must be in this state?
                     case ProgressStateReplicate:
-                        Long last = m.Entries[n - 1].Index;
+                        long last = m.Entries[n - 1].Index;
                         pr.optimisticUpdate(last);
                         pr.ins.add(last);
                     case ProgressStateProbe:
@@ -569,11 +575,11 @@ public class Raft {
     public void Step(pb.Message m) {
         // Handle the message term, which may result in our stepping down to a follower.
         {
-            // local message?
+            // local message do nothing
             if (m.Term == 0L) {
-                // todo
+
             }
-            if (m.Term > Term) {
+            else if (m.Term > Term) {
                 // Never change our term in response to a PreVote
                 // We send pre-vote requests with a term in our future. If the
                 // pre-vote is granted, we will increment our term when we get a
@@ -925,6 +931,7 @@ class stepLeader implements stepFunc {
                     // If we are not currently a member of the range (i.e. this node
                     // was removed from the configuration while serving as leader),
                     // drop any new proposals.
+                    LOG.warn("we are not currently a member of the range ");
                     return;
                 }
                 if (r.leadTransferee != 0L) {
@@ -944,7 +951,9 @@ class stepLeader implements stepFunc {
                         }
                     }
                 }
+                // append to unstable
                 r.appendEntry(m.Entries);
+                // broadcast append
                 r.bcastAppend();
                 return;
             case MsgReadIndex:
@@ -1019,6 +1028,7 @@ class stepLeader implements stepFunc {
                 pr.RecentActive = true;
                 pr.resume();
 
+                LOG.debug("MsgHeartbeatResp " + JSON.toJSONString(pr));
                 // free one slot for the full inflights window to allow progress.
                 if (pr.State == ProgressStateReplicate && pr.ins.full()) {
                     pr.ins.freeFirstOne();
@@ -1034,6 +1044,13 @@ class stepLeader implements stepFunc {
                 int ackCount = r.readOnly.recvAck(m);
                 if (ackCount < r.quorum()) {
                     return;
+                }
+
+                ReadIndexStatus[] rss = r.readOnly.advance(m);
+                if (rss != null) {
+                    for (int i = 0; i < rss.length; i++) {
+
+                    }
                 }
 
                 // TODO rss

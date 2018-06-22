@@ -1,7 +1,12 @@
 package raft;
 
+import com.alibaba.fastjson.JSON;
+import pb.Entry;
+import util.ArrayUtil;
+import util.LOG;
 import util.Panic;
 
+import java.lang.reflect.Array;
 import java.util.Arrays;
 
 /**
@@ -118,8 +123,8 @@ public class RaftLog {
     }
 
     public pb.Entry[] unstableEntries() {
-        if (this.unstable.entries.length == 0) return null;
-        return this.unstable.entries;
+        if (unstable.entries.length == 0) return null;
+        return unstable.entries;
     }
 
     // nextEnts returns all the available entries for execution.
@@ -212,7 +217,54 @@ public class RaftLog {
 
     // slice returns a slice of log entries from lo through hi-1, inclusive.
     public pb.Entry[] slice(long lo, long hi, long maxSize) {
-        return null;
+        mustCheckOutOfBounds(lo, hi);
+
+        if (lo == hi) {
+            return null;
+        }
+
+        Entry[] ents = null;
+        if (lo < unstable.offset) {
+            Entry[] storedEnts = storage.entries(lo, Math.min(hi, unstable.offset), maxSize);
+            if (storedEnts == null) {
+                logger.panic("storedEnts null");
+            }
+
+            // check if ents has reached the size limitation
+            if (storedEnts.length < Math.max(hi, unstable.offset) - lo) {
+                return storedEnts;
+            }
+
+            ents = storedEnts;
+        }
+
+        if (hi > unstable.offset) {
+            Entry[] unstableE = unstable.slice(Math.max(lo, unstable.offset), hi);
+            if (ents != null && ents.length > 0) {
+                ents = ArrayUtil.append(ArrayUtil.asArray(Entry.builder().build()), ents);
+                ents = ArrayUtil.append(ents, unstableE);
+            } else {
+                ents = unstableE;
+            }
+        }
+        return Util.limitSize(ents, maxSize);
+    }
+
+    // l.firstIndex <= lo <= hi <= l.firstIndex + len(l.entries)
+    private void mustCheckOutOfBounds(long lo, long hi) {
+        if (lo > hi) {
+            logger.panic(String.format("invalid slice %d > %d", lo, hi));
+        }
+
+        long fi = firstIndex();
+        if (lo < fi) {
+            logger.panic("err compacted");
+        }
+
+        long length = lastIndex() + 1 - fi;
+        if (lo < fi || hi > fi + length) {
+            logger.panic(String.format("slice[%d,%d) out of bound [%d,%d]", lo, hi, fi, lastIndex()));
+        }
     }
 
     // isUpToDate determines if the given (lastIndex,term) log is more up-to-date
@@ -225,11 +277,14 @@ public class RaftLog {
         return term > this.lastTerm() || (term == this.lastTerm() && lasti >= this.lastIndex());
     }
 
-    public pb.Entry[] entries(Long i, Long maxsize) {
-        if (i > this.lastIndex()) {
+    public pb.Entry[] entries(long i, long maxsize) {
+        LOG.debug("RaftLog entries lastIndex " + lastIndex());
+        LOG.debug("RaftLog entries unstable " + JSON.toJSONString(unstableEntries()));
+
+        if (i > lastIndex()) {
             return null;
         }
-        return this.slice(i, lastIndex() + 1, maxsize);
+        return slice(i, lastIndex() + 1, maxsize);
     }
 
     public Long zeroTermOnErrCompacted(Long t) {

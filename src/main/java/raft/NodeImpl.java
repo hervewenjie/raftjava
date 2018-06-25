@@ -193,6 +193,7 @@ public class NodeImpl implements Node {
             // ready
             if (readyc != null && rd != null && rd.containsUpdates()) {
                 readyc = this.readyc;
+                // add to ready for
                 readyc.add(rd);
                 if (rd.SoftState != null) {
                     prevSoftSt = rd.SoftState;
@@ -202,9 +203,7 @@ public class NodeImpl implements Node {
                     prevLastUnstablet = rd.Entries[rd.Entries.length - 1].Term;
                     havePrevLastUnstablei = true;
                 }
-                if (!rd.IsEmptyHardState(rd.HardState)
-                        // hack???
-                        && rd.Snapshot != null) {
+                if (!rd.IsEmptyHardState(rd.HardState) && rd.Snapshot != null) {
                     prevSnapi = rd.Snapshot.Metadata.Index;
                 }
 

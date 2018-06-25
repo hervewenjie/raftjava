@@ -32,7 +32,8 @@ public class Inflights {
 
     // buffer contains the index of the last entry
     // inside one message.
-    long[] buffer;
+    @Builder.Default
+    long[] buffer = {};
 
     public static Inflights newInflights(int size) {
         return Inflights.builder().size(size).build();
@@ -45,7 +46,7 @@ public class Inflights {
 
     // add adds an inflight into inflights
     public void add(long inflight) {
-        if (this.full()) {
+        if (full()) {
             Panic.panic("cannot add into a full inflights");
         }
         int next = start + count;

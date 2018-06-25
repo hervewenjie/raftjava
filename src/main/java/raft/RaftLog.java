@@ -36,6 +36,22 @@ public class RaftLog {
         this.logger = logger;
     }
 
+    // called by raft
+    // - - - - - - - - - -
+    public long append(pb.Entry... ents) {
+        if (ents.length == 0) {
+            return lastIndex();
+        }
+        long after = ents[0].Index - 1;
+        if (after < committed) {
+            logger.panic(String.format("after(%d) is out of range [committed(%d)]", after, committed));
+        }
+        unstable.truncateAndAppend(ents);
+        return lastIndex();
+    }
+
+    // - - - - - - - - - -
+
     // newLog returns log using the given storage. It recovers the log to the state
     // that it just commits and applies the latest snapshot.
     public static RaftLog newLog(Storage storage, Logger logger) {
@@ -83,18 +99,6 @@ public class RaftLog {
             return true;
         }
         return false;
-    }
-
-    public long append(pb.Entry... ents) {
-        if (ents.length == 0) {
-            return lastIndex();
-        }
-        long after = ents[0].Index - 1;
-        if (after < committed) {
-            logger.panic(String.format("after(%d) is out of range [committed(%d)]", after, committed));
-        }
-        unstable.truncateAndAppend(ents);
-        return lastIndex();
     }
 
     // findConflict finds the index of the conflict.
@@ -171,12 +175,13 @@ public class RaftLog {
         return i;
     }
 
-    public void commitTo(Long tocommit) {
+    public void commitTo(long tocommit) {
         // never decrease commit
         if (committed < tocommit) {
             if (lastIndex() < tocommit) {
                 logger.panic(String.format("tocommit(%d) is out of range [lastIndex(%d)]. Was the raft log corrupted, truncated, or lost?", tocommit, this.lastIndex()));
             }
+            LOG.info(String.format("raft log commitTo from %d to %d", committed, tocommit));
             committed = tocommit;
         }
     }
@@ -193,22 +198,22 @@ public class RaftLog {
 
     public void stableTo(long i, long t) {unstable.stableTo(i, t);}
 
-    long lastTerm() {
+    public long lastTerm() {
         long t = this.term(this.lastIndex());
         return t;
     }
 
-    long term(Long i) {
-        long dummyIndex = this.firstIndex() - 1;
-        if (i < dummyIndex || i > this.lastIndex()) {
+    public long term(long i) {
+        long dummyIndex = firstIndex() - 1;
+        if (i < dummyIndex || i > lastIndex()) {
             // TODO return an error instead???
             return 0L;
         }
         long t;
-        if ((t = this.unstable.maybeTerm(i)) != 0L) {
+        if ((t = unstable.maybeTerm(i)) != 0L) {
             return t;
         }
-        t = this.storage.term(i);
+        t = storage.term(i);
         if (t != 0L) {
             return t;
         }
@@ -273,7 +278,7 @@ public class RaftLog {
     // later term is more up-to-date. If the logs end with the same term, then
     // whichever log has the larger lastIndex is more up-to-date. If the logs are
     // the same, the given log is up-to-date.
-    public boolean isUpToDate(Long lasti, Long term) {
+    public boolean isUpToDate(long lasti, long term) {
         return term > this.lastTerm() || (term == this.lastTerm() && lasti >= this.lastIndex());
     }
 
@@ -287,7 +292,7 @@ public class RaftLog {
         return slice(i, lastIndex() + 1, maxsize);
     }
 
-    public Long zeroTermOnErrCompacted(Long t) {
+    public long zeroTermOnErrCompacted(long t) {
         return 0L;
     }
 

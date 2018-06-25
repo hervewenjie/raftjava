@@ -17,13 +17,13 @@ import java.util.Arrays;
 public class Unstable {
 
     // the incoming unstable snapshot, if any.
-    pb.Snapshot snapshot;
+    public pb.Snapshot snapshot;
     // all entries that have not yet been written to storage.
-    pb.Entry[] entries = {};
+    public pb.Entry[] entries = {};
 
-    long offset;
+    public long offset;
 
-    Logger logger;
+    public Logger logger;
 
     public long maybeLastIndex() {
         int l = entries.length;
@@ -58,7 +58,7 @@ public class Unstable {
         if (i > last) {
             return -1L;
         }
-        return entries[Long.valueOf(i - this.offset).intValue()].Term;
+        return entries[Long.valueOf(i - offset).intValue()].Term;
     }
 
     public void truncateAndAppend(pb.Entry... ents) {

@@ -184,8 +184,8 @@ public class Raft {
     // handle entries in received message
     public void handleAppendEntries(pb.Message m) {
         // entries already committed
-        if (m.Index < this.raftLog.committed) {
-            this.send(pb.Message.builder().To(m.From).Type(MessageType.MsgAppResp).Index(this.raftLog.committed).build());
+        if (m.Index < raftLog.committed) {
+            this.send(pb.Message.builder().To(m.From).Type(MessageType.MsgAppResp).Index(raftLog.committed).build());
             return;
         }
 
@@ -404,12 +404,16 @@ public class Raft {
     // the commit index changed (in which case the caller should call
     // r.bcastAppend).
     public boolean maybeCommit() {
-        long[] mis = new long[prs.size()];
+        Long[] mis = new Long[prs.size()];
         int i = 0;
-        for (Long l : prs.keySet()) {
+        for (long l : prs.keySet()) {
             mis[i] = prs.get(l).Match;
             i++;
         }
+        Arrays.sort(mis, Collections.reverseOrder());
+        // what the fuck is going on???
+        // "I have sent to quorum at least Index xxx"
+        // "they are confirmed, so it is ok to commit"
         long mci = mis[quorum() - 1];
         return raftLog.maybeCommit(mci, Term);
     }
@@ -984,7 +988,7 @@ class stepLeader implements stepFunc {
             case MsgAppResp:
                 pr.RecentActive = true;
 
-                // if rejected???
+                // if rejected
                 if (m.Reject) {
                     r.logger.debug(String.format("%x received msgApp rejection(lastindex: %d) from %x for index %d",
                             r.id, m.RejectHint, m.From, m.Index));
@@ -999,6 +1003,8 @@ class stepLeader implements stepFunc {
                     boolean oldPaused = pr.IsPaused();
                     if (pr.maybeUpdate(m.Index)) {
                         switch (pr.State) {
+                            // default ProgressStateProbe???
+                            // if received append response, become replicate
                             case ProgressStateProbe:
                                 pr.becomeReplicate();
                             case ProgressStateSnapshot:

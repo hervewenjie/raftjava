@@ -16,7 +16,9 @@ import static raft.ProgressStateType.ProgressStateSnapshot;
 @Builder
 public class Progress {
 
-    public long Match, Next;
+    public long Match; // already sent (do not have to be acknowledged???)
+
+    public long Next; //  next to send
 
     // State defines how the leader should interact with the follower.
     //
@@ -29,7 +31,8 @@ public class Progress {
     //
     // When in ProgressStateSnapshot, leader should have sent out snapshot
     // before and stops sending any replication message.
-    public ProgressStateType State = ProgressStateProbe; // default probe???
+    @Builder.Default
+    public ProgressStateType State = ProgressStateReplicate; // default probe???
 
     // Paused is used in ProgressStateProbe.
     // When Paused is true, raft should pause sending replication message to this peer.
